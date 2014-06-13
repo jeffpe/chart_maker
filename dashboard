@@ -1,0 +1,589 @@
+# Make html page with basic metrics charts
+
+# load in the required libraries
+require "csv"
+require "date"
+require "simple_time_series"
+require "json"
+
+# set the names of the csv files
+products_file = "2014_counts.csv"
+metaproducts_file = "2014_metacounts.csv"
+
+
+
+# Convert CSV to ARRAY, input csv_name, return the array
+def csv_to_array(csv_name)
+	CSV.read(csv_name)
+end
+
+
+	
+
+def get_week(week_type)
+	puts "Today is:" , Date.today, Date::ABBR_DAYNAMES[Date.today.wday]
+	puts "The Week is:", Date.today.cweek
+	puts "Enter the #{week_type} (1-53)"
+	week = STDIN.gets.to_i
+end
+
+ 
+
+def setup_series(array)
+	end_row = array.length - 1
+	start_row = 0
+	data_hash = {}
+	time_hash = {}
+	data_list = []
+	time_list = []
+	for i in (start_row..end_row)  
+		if array[i][0] == array[i][0].upcase 
+			time_hash[array[i][0].to_s] = array[i][1, array.length - 1]
+			time_list << array[i][0]
+			else
+				
+						data_hash[array[i][0].to_s] = array[i][1, array.length - 1]
+						data_list << array[i][0]
+				
+		end
+	end
+	my_data = SimpleTimeSeries.new(:time_vars => time_hash,
+                               :data_vars => data_hash)
+
+
+	return my_data, data_list, time_list
+end
+
+
+def make_table(data_type, data_list, my_data, start_week, end_week)
+	count_names = data_list.select { |a| a[data_type]}
+	count_table = []
+	top_row = ["Products"]
+	top_row << my_data.find('date',start_week.to_s, end_week.to_s)
+	top_row.flatten!
+	
+	count_table  << top_row
+	
+
+	count_names.each do |countname|
+		puts countname
+		count_table << my_data.find_plus_label(countname, start_week.to_s, end_week.to_s)
+	end
+	
+	#add percent changes and integer formatting and div by 0 erros
+	count_table.each_index do |i|
+		case i 
+			when 0
+				count_table[i] << "% Change"
+			else
+				count_table[i][1..-1] = count_table[i][1..-1].map {|x| x.to_i}
+				change = (((((count_table[i][-1].to_f)/(count_table[i][-2].to_f))-1)*100).round(2))
+				change = 0 if change.nan?
+				count_table[i] << change
+		end
+	end
+	# Sum columns and add total row. Could install Matrix and use Vector
+	elementlength = count_table[0].length
+	column_sum = [0]*elementlength
+	count_table.each_index do |i|
+		if i !=0
+				count_table[i].each_index do |j|
+					if j != 0
+						if 
+							column_sum[j] += count_table[i][j].to_f
+							column_sum[j] = column_sum[j].round(2)
+						end
+					end
+				end
+		end
+	end
+	column_sum[0] = "TOTAL"
+	column_sum[elementlength-1] =((((column_sum[-2].to_f/column_sum[-3].to_f)-1)*100).round(2))
+	count_table << column_sum
+	return count_table, count_names
+end
+
+def make_count_chart(my_data, count_names)
+	count_chart_table = []
+	chart_top_row = [""]
+	chart_top_row << my_data.find('date','1', (Date.today.cweek-3).to_s)
+	chart_top_row.flatten!
+
+	count_chart_table  << chart_top_row
+
+	count_names.each do |countname|
+		puts countname
+		count_chart_table << my_data.find_plus_label(countname, '1', (Date.today.cweek-3).to_s)
+	end
+
+	count_chart_table.each_index do |i|
+		if i != 0
+				count_chart_table[i][1..-1] = count_chart_table[i][1..-1].map {|x| x.to_i}
+		end
+	end
+	return count_chart_table
+end
+
+#****************
+def make_bar_chart_table(data_type, data_list, my_data, start_week, end_week)
+	count_names = data_list.select { |a| a[data_type]}
+	count_table = []
+	top_row = ['Products']
+	top_row << data_type
+	
+	top_row << "{role: 'style'}"  #make this a constant if used often
+	top_row.flatten!
+	count_table  << top_row
+	color_list = [ 'blue', 'red', 'orange', 'green', 'purple', 'ltblue', 'pink', 'yellow']
+
+	count_names.each do |countname|
+		puts countname
+		count_table << [countname, my_data.find(countname, end_week.to_s).to_i, color_list.first]
+		color_list.rotate!
+	end
+	net_new_chart = count_table.to_s.gsub('"{','{').gsub('}"','}') #the {role:'style'} item must not have Quotes around it
+	return net_new_chart, count_names
+end
+
+def add_total_row(data_array)
+	elementlength = data_array[0].length
+	column_sum = [0]*elementlength
+	data_array.each_index do |i|
+		if i !=0
+				data_array[i].each_index do |j|
+					if j != 0
+						if 
+							column_sum[j] += data_array[i][j].to_f
+							column_sum[j] = column_sum[j].round(2)
+						end
+					end
+				end
+		end
+	end
+	column_sum[0] = "TOTAL"
+	data_array<< column_sum
+	return data_array, column_sum
+end
+
+
+
+#**************
+
+def output_counts_page(file_name, count_table, count_chart_table, net_new_table, net_new_chart, new_table, new_chart, new_cancels)
+	fileHtml = File.new(file_name, "w+")
+	fileHtml << new_cancels
+	fileHtml <<  '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">'
+	fileHtml <<  '<html xmlns="http://www.w3.org/1999/xhtml">'
+	fileHtml <<   '<head>'
+	fileHtml <<   ' <meta http-equiv="content-type" content="text/html; charset=utf-8"/>'
+	fileHtml <<    '<title>'
+	fileHtml <<    'PROTOTYPE DASHBOARD'
+	fileHtml <<     '</title>'
+	fileHtml << '<!--LOAD GOOGLE CHARTS API LIBRARY (they leave out the http in their examples, but it does not work then)-->
+   <!--
+   <script type="text/javascript" src="http://www.google.com/jsapi"></script>
+   -->
+	<script type="text/javascript" src="jsapi.js"></script>
+	<!--LOAD COMPONENTS NEEDED-->
+    <script type="text/javascript">
+      google.load(\'visualization\', \'1\', {packages: [\'corechart\', \'table\']});
+    </script>
+	
+	<!--PRODUCTS TABLE-->
+	<script type="text/javascript">
+    function drawVisualization() {
+      // Create and populate the data table.
+      var data3 = google.visualization.arrayToDataTable('
+	  fileHtml<< count_table
+      fileHtml<< ');
+	  
+	  
+      // Create and draw the visualization.
+      visualization = new google.visualization.Table(document.getElementById(\'table1\'));
+      visualization.draw(data3, {
+		allowHtml: true,
+		}
+	 );
+    }
+    google.setOnLoadCallback(drawVisualization);
+    </script>
+	
+	
+	
+	<!--PRODUCTS CHART-->
+    <script type="text/javascript">
+      function drawVisualization() {
+        // Create and populate the data table.
+        var data1 = google.visualization.arrayToDataTable('
+		fileHtml<< count_chart_table.transpose
+		fileHtml<< ');
+		
+        // Create and draw the visualization.
+        new google.visualization.LineChart(document.getElementById(\'visualization\')).
+            draw(data1, {curveType: "function",
+                        width: 600, height: 280,
+                        vAxis: {maxValue: 600},
+						titleTextStyle: {fontName: \'Arial Narrow\', fontSize: 22, bold: 0., color: \'black\'},
+						title: \'Product Counts Chart (YTD)\',
+						}
+                );			
+      }
+      
+      google.setOnLoadCallback(drawVisualization);
+    </script>
+	
+<!--NET NEW PRODUCTS TABLE-->
+	<script type="text/javascript">
+    function drawVisualization() {
+      // Create and populate the data table.
+      var data3 = google.visualization.arrayToDataTable('
+	fileHtml<< net_new_table
+    fileHtml<< ');
+	  
+	  
+      // Create and draw the visualization.
+      visualization = new google.visualization.Table(document.getElementById(\'netnewtable\'));
+      visualization.draw(data3, {
+		allowHtml: true,
+		}
+	 );
+    }
+    google.setOnLoadCallback(drawVisualization);
+    </script>
+
+	<!--NET NEW COLUMN CHART-->
+	<script type="text/javascript">
+	    function drawVisualization() {
+        var data = google.visualization.arrayToDataTable('
+		fileHtml<< net_new_chart
+		fileHtml<<');
+
+		new google.visualization.ColumnChart(document.getElementById(\'netnewchart\')).
+            draw(data, {width: 600, height: 280,
+						hAxis: {textStyle: {fontSize:8}},
+						titleTextStyle: {fontName: \'Arial Narrow\', fontSize: 22, bold: 0., color: \'black\'},
+						title: \'Products Net New (last week of table)\',
+						legend: {position: \'none\'}
+						
+					
+						
+						}
+                );	
+        
+      }
+	  google.setOnLoadCallback(drawVisualization);
+    </script>
+	
+	
+	<!-- NEW  COUNT PRODUCTS TABLE-->
+	<script type="text/javascript">
+    function drawVisualization() {
+      // Create and populate the data table.
+      var data3 = google.visualization.arrayToDataTable('
+	#************************************************************8
+	fileHtml<< new_table
+	 fileHtml<< ');
+	  
+	  
+      // Create and draw the visualization.
+      visualization = new google.visualization.Table(document.getElementById(\'newcounttable\'));
+      visualization.draw(data3, {
+		allowHtml: true,
+		
+		}
+	 );
+    }
+    google.setOnLoadCallback(drawVisualization);
+    </script>
+	
+	
+	<!--NEW COUNT CHART-->
+    <script type="text/javascript">
+      function drawVisualization() {
+        // Create and populate the data table.
+        var data5 = google.visualization.arrayToDataTable('
+
+		fileHtml<< new_chart.transpose
+		fileHtml<< ');
+		
+        // Create and draw the visualization.
+        new google.visualization.LineChart(document.getElementById(\'newcountchart\')).
+            draw(data5, {curveType: "function",
+                        width: 600, height: 280,
+						vAxis:{viewWindow: {min:0}},
+						titleTextStyle: {fontName: \'Arial Narrow\', fontSize: 22, bold: 0., color: \'black\'},
+						title: \'Product New Counts Chart (YTD)\',
+						
+
+						}
+                );			
+      }
+      
+      google.setOnLoadCallback(drawVisualization);
+    </script>
+	
+	
+	
+	<!--NEW VS CANCELED-->
+    <script type="text/javascript">
+      function drawVisualization() {
+        // Create and populate the data table.
+        var data1 = google.visualization.arrayToDataTable('
+		fileHtml<< new_cancels
+	
+		fileHtml<< ');
+		
+        // Create and draw the visualization.
+        new google.visualization.LineChart(document.getElementById(\'newvscanceled\')).
+            draw(data1, {curveType: "function",
+                        width: 1200, height: 280,
+                        vAxis:{viewWindow: {max:80}},
+						titleTextStyle: {fontName: \'Arial Narrow\', fontSize: 22, bold: 0., color: \'black\'},
+						title: \'Products New vs. Canceled (YTD)\',
+						legend: {position: \'top\'},
+						}
+                );			
+      }
+      
+      google.setOnLoadCallback(drawVisualization);
+    </script>
+	
+	
+	
+	
+	
+	
+  </head>
+ <h1>HEDGEYE MASS MARKET PRODUCT DASHBOARD</h1>
+  
+  <body style="font-family: Arial Narrow; border: 0 none; font-size: 22 ">
+  
+	<table>
+		<tr>
+			<td>
+			<span style="font-family: Arial Narrow; border: 0 none; font-size: 22px ">Product Counts</span>
+			<div id="table1" style="width: 100%; height: 100%;"></div>
+			</td>
+			<td>
+			<div id="visualization" style="width: 100%; height: 100%;"></div>
+			</td>
+		</tr>
+	</table>
+	<hr>
+	
+<table>
+		<tr>
+			<td>
+			<span style="font-family: Arial Narrow; border: 0 none; font-size: 22px ">Product Net New</span>
+			<div id="netnewtable" style="width: 100%; height: 100%;"></div>
+			</td>
+			<td>
+			<div id="netnewchart" style="width: 100%; height: 100%;"></div>
+			</td>
+		</tr>
+	</table>
+		<hr>
+<table>
+		<tr>
+			<td>
+			<span style="font-family: Arial Narrow; border: 0 none; font-size: 22px ">Product New  Count</span>
+			<div id="newcounttable" style="width: 100%; height: 100%;"></div>
+			</td>
+			<td>
+			<div id="newcountchart" style="width: 100%; height: 100%;"></div>
+			</td>
+		</tr>
+	</table>
+	<hr>
+
+<table>
+		<tr>
+			<td>
+			<div id="newvscanceled" style="width: 100%; height: 100%;"></div>
+			</td>
+		</tr>
+	</table>
+	<hr>
+</body>
+</html>'
+
+	fileHtml.close()
+end
+
+
+#----------------------------------------------------------------
+#***************************************************
+# Start the Programmmmmmmm
+#***************************************************
+#----------------------------------------------------------------
+
+begin
+
+
+	start_week = get_week("Start Week")
+
+	end_week = get_week("End Week")
+
+	metaproducts_array = csv_to_array(metaproducts_file)
+
+	my_data, data_list, time_list = setup_series(metaproducts_array)
+	
+
+	count_table, count_names = make_table("count", data_list, my_data, start_week, end_week)
+
+	count_chart_table = make_count_chart(my_data, count_names)
+	
+	
+	net_new_table, net_new_names = make_table("netnew", data_list, my_data, start_week, end_week)
+	net_new_chart, net_new_names = make_bar_chart_table('netnew', data_list, my_data, end_week, end_week)
+	
+	#*********8
+		new_table, new_names = make_table("_new", data_list, my_data, start_week,end_week) #MIGHT WANT TO CHANGE NEW NAME TO NEW_COUNT or somthing like that
+
+		new_chart = make_count_chart(my_data, new_names)
+		new_chart, new_totals = add_total_row(new_chart)
+	#*********Calculate the cancels and make chart for new vs cancels
+	#cancels = new - net new	
+	# make net new for the year
+		year_net_new = make_count_chart(my_data, net_new_names)
+		year_net_new, net_new_totals = add_total_row(year_net_new)
+		
+	
+		new_cancels = [["Date","NEW","CANCELS"]]
+		for i in (1..(new_totals.length-1))
+			new_cancels<< [my_data.find('date',i.to_i.to_s), new_totals[i].to_i, (new_totals[i].to_i - net_new_totals[i].to_i)]
+		end
+
+	#*************	
+	output_counts_page("testoutput.html", count_table, count_chart_table, net_new_table, net_new_chart, new_table, new_chart, new_cancels)
+	
+
+		
+		
+	
+	
+	system("start testoutput.html")
+
+end
+#--------------------------------------------------------------
+
+
+####################
+# Output CSV File
+###################
+#CSV.open(output_file_name, "wb") do |csv|
+#	csv << ["Jango Desktop Blast Results -- MD BLAST and SALES BLAST"]
+#	csv << [Date.today]
+#	csv << []
+#	csv << ["MD BLAST RESULTS"]
+#	csv << ["Sent",jangomds_sent]
+#	csv << ["Open Rate",jangomds_opens/jangomds_sent.to_f]
+#	csv << ["Click Rate",jangomds_clicks/jangomds_sent.to_f]
+#	csv << ["Bounce Rate",jangomds_bounces/jangomds_sent.to_f]
+#	csv << []
+#	csv << ["-----------------------------------"]
+#	csv << []
+#	csv << ["SALES BLAST RESULTS"]
+#	csv << ["Sent",jangosales_sent]
+#	csv << ["Open Rate",jangosales_opens/jangosales_sent.to_f]
+#	csv << ["Click Rate",jangosales_clicks/jangosales_sent.to_f]
+#	csv << ["Bounce Rate",jangosales_bounces/jangosales_sent.to_f]
+#	end
+	
+
+#puts my_data
+#puts data_list
+#puts time_list
+#puts my_data.mnl_count_on(end_week.to_s)
+#puts my_data.mnl_count_on('12/30/2013')
+#my_data.pizzas_subset('Tuesday','Thursday') # returns [1, 0, 0.5]
+
+#ptable, ptable2 = product_count_table(end_week, 3, products_array)
+#pchart = product_count_chart(end_week, 1, products_array)
+
+# a["count"] a string
+# a[4.. -1]
+# a[0, 3]
+# a[0..2}
+#integer_test = Float array[x][y] rescue nil
+
+#for i in (1..count_table.length-1)
+ #count_table[i].insert(0,'Label')
+#end
+
+
+#puts count_table[0][2]
+#puts count_table
+#count_table.each do |x|
+#	x.each do |y|; puts y, y.class; end
+#end
+#pchart = product_count_chart(end_week, start_week, metaproducts_array)  # this is stripping off the years? in count_table
+#puts count_table[0][2]
+#------------------------------------------------------------------------
+#net new chart array
+ #[\'Product\', \'Net New\', {role: \'style\' }],
+#		[\'Morning Newsletter\',-1, \'blue\'],
+#		[\'Real-Time Alerts\',3, \'red\'],
+#		[\'Investing Ideas\',-3, \'orange\'],
+#		[\'Daily Trading Ranges\',2, \'green\'],
+#		[\'Hedgeye Investor\',-0, \'purple\'],
+#		[\'Hedgeye Risk Manager\',-0,\'ltblue\'],
+#		[\'Retail PRO\',0,\'pink\'],
+#		[\'Industrials PRO\',0,\'yellow\'],
+
+#new table array
+ # [
+#		[\'Product\',\'4/7/2014\',\'4/14/2014\',\'4/21/2014\',\'% Change\'],
+#		[\'Morning Newsletter\',9,11,3,-72.7],
+#		[\'Real-Time Alerts\',30,15,17,13.3],
+#		[\'Investing Ideas\',10,5,4,-20],
+#		[\'Daily Trading Ranges\',3,7,6,-14.3],
+#		[\'Hedgeye Investor\',0,0,1,0],
+#		[\'Hedgeye Risk Manager\',2,1,1,0],
+#		[\'Retail PRO\',1,0,0,0],
+#		[\'Industrials PRO\', 0,0,0,0],
+#		[\'TOTAL\',55,39,32,-17.9]
+ #     ]
+ 
+# 		new_chart array
+#		[
+  #        [\'Date\', \'NEW\'],
+    #      [\'1/6\', 34],
+     #     [\'1/13\', 48],
+     #     [\'1/20\', 46],
+       #   [\'1/27\', 38],
+#          [\'2/3\', 59],
+ #         [\'2/10\', 46],
+  #        [\'2/17\', 29],
+  #        [\'2/24\', 29],
+ #         [\'3/3\', 43],
+ #         [\'3/10\', 42],
+#		  [\'3/17\', 43],
+#		  [\'3/24\', 37],
+#		  [\'3/31\', 39],
+#		  [\'4/7\', 55],
+#		  [\'4/14\', 39],
+#		  [\'4/21\', 32],
+ #       ]
+
+ #		New vs Cancelled
+#		[
+ #         [\'Date\', \'NEW\', \'CANCELED\'],
+  #        [\'1/6\', 34,27],
+ #         [\'1/13\', 48,36],
+ #         [\'1/20\', 46,33],
+ #         [\'1/27\', 38,22],
+ #         [\'2/3\', 59,42],
+  #        [\'2/10\', 46,37],
+ #         [\'2/17\', 29,35],
+  #        [\'2/24\', 29,36],
+   #       [\'3/3\', 43,45],
+#          [\'3/10\', 42,57],
+#		  [\'3/17\', 43,27],
+#		  [\'3/24\', 37,43],
+#		  [\'3/31\', 39,62],
+#		  [\'4/7\', 55,39],
+#		  [\'4/14\', 39,71],
+#		  [\'4/21\', 32,31],
+#        ]
+ 
